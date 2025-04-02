@@ -114,8 +114,7 @@ IMAGE_STYLES = [
 
 def create_diffusion_messages(style: str, num_prompts: int) -> List[Message]:
     system_content = """You are an expert in creating diverse and descriptive prompts for image generation models.
-You will generate a set of creative prompts in a specific artistic style.
-Each prompt should be detailed and consistent with the given style.
+Your task is to generate detailed and creative prompts that strongly embody specific styles.
 You will return the prompts in a JSON format with no additional text.
 
 Example Output:
@@ -126,9 +125,13 @@ Example Output:
   ]
 }"""
 
-    user_content = f"""Generate {num_prompts} creative and detailed prompts in the following style: {style}
-Make sure each prompt is descriptive and would work well with image generation models.
-Return only the JSON response."""
+    user_content = f"""Generate {num_prompts} prompts in {style} style.
+
+Requirements:
+- Each prompt must clearly communicate the {style}'s distinctive visual characteristics
+- Include specific visual elements that define this style (textures, colors, techniques)
+- Vary subject matter and get creative! 
+- Remembering to return JSON only"""
 
     return [Message(role=Role.SYSTEM, content=system_content), Message(role=Role.USER, content=user_content)]
 
