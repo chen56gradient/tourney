@@ -38,6 +38,7 @@ async def _is_recent_update(config: Config) -> bool:
         return False
 
 async def get_and_store_nodes(config: Config) -> list[Node]:
+    logger.info('IN GET AND STORE NODES')
     try:
         async with config.psql_db.pool.acquire(timeout=cst.TIMEOUT) as conn:
             await conn.execute("SELECT 1")
@@ -46,12 +47,14 @@ async def get_and_store_nodes(config: Config) -> list[Node]:
 
     # Get blacklist status for existing nodes
     blacklisted_nodes = {}
+    logger.info('LOOKING FOR BLACKLISTED')
     async with await config.psql_db.connection() as connection:
-        # Query just the hotkey, netuid, and is_blacklisted fields
         query = "SELECT hotkey, netuid, is_blacklisted FROM nodes WHERE is_blacklisted = true"
         rows = await connection.fetch(query)
+        logger.info(rows)
         for row in rows:
             blacklisted_nodes[(row['hotkey'], row['netuid'])] = True
+    logger.info(f'BLACKLISTED NODES {blacklisted_nodes}')
 
     if await _is_recent_update(config):
         nodes = await get_all_nodes(config.psql_db)
