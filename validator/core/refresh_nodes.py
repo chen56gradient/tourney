@@ -37,30 +37,28 @@ async def _is_recent_update(config: Config) -> bool:
             return True
         return False
 
+
 async def get_and_store_nodes(config: Config) -> list[Node]:
-    logger.info('IN GET AND STORE NODES')
     try:
         async with config.psql_db.pool.acquire(timeout=cst.TIMEOUT) as conn:
             await conn.execute("SELECT 1")
     except Exception as e:
         logger.warning(f"DB pool not ready, reconnecting... {e}")
 
-    # Get blacklist status for existing nodes
-    blacklisted_nodes = {}
-    logger.info('LOOKING FOR BLACKLISTED')
+    # First, fetch blacklisted nodes before any migration
+    blacklisted_hotkeys = {}
     async with await config.psql_db.connection() as connection:
-        query = "SELECT hotkey, netuid, is_blacklisted FROM nodes WHERE is_blacklisted = true"
-        rows = await connection.fetch(query)
-        logger.info(rows)
-        for row in rows:
-            blacklisted_nodes[(row['hotkey'], row['netuid'])] = True
-    logger.info(f'BLACKLISTED NODES {blacklisted_nodes}')
+        query = "SELECT hotkey, netuid FROM nodes WHERE is_blacklisted = true"
+        blacklisted = await connection.fetch(query)
+        # Create lookup dictionary with composite key (hotkey, netuid)
+        for row in blacklisted:
+            blacklisted_hotkeys[(row['hotkey'], row['netuid'])] = True
 
-    if await _is_recent_update(config):
+    if await is_recent_update(config):
         nodes = await get_all_nodes(config.psql_db)
 
     logger.info("At fetch")
-    raw_nodes = await _fetch_nodes_from_substrate(config)
+    raw_nodes = await fetch_nodes_from_substrate(config)
     logger.info("after fetch")
     nodes = [Node(**node.model_dump(mode="json")) for node in raw_nodes]
     logger.info("after nodes")
@@ -69,13 +67,32 @@ async def get_and_store_nodes(config: Config) -> list[Node]:
         logger.info("connection made")
         await migrate_nodes_to_history(connection)
         logger.info("after migrate")
-
-        await insert_nodes_with_blacklist(connection, nodes, blacklisted_nodes)
+        await insert_nodes(connection, nodes)
         logger.info("after insert")
+
+        # Restore blacklist status after insert
+        if blacklisted_hotkeys:
+            # Build parameters for the query
+            params = []
+            placeholders = []
+            index = 1
+
+            for (hotkey, netuid) in blacklisted_hotkeys:
+                params.extend([hotkey, netuid])
+                placeholders.append(f"(${index}, ${index+1})")
+                index += 2
+
+            placeholders_str = ", ".join(placeholders)
+            restore_query = f"""
+            UPDATE nodes
+            SET is_blacklisted = true
+            WHERE (hotkey, netuid) IN ({placeholders_str})
+            """
+            await connection.execute(restore_query, *params)
+            logger.info(f"Restored blacklist status for {len(blacklisted_hotkeys)} nodes")
 
     logger.info(f"Stored {len(nodes)} nodes.")
     return nodes
-
 
 async def refresh_nodes_periodically(config: Config) -> None:
     while True:
