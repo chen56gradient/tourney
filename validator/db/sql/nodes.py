@@ -254,3 +254,37 @@ async def get_node_id_by_hotkey(hotkey: str, psql_db: PSQLDB) -> int | None:
             WHERE {dcst.HOTKEY} = $1 AND {dcst.NETUID} = $2
         """
         return await connection.fetchval(query, hotkey, NETUID)
+
+async def insert_nodes_with_blacklist(connection, nodes, blacklisted_nodes):
+    """Insert nodes while preserving blacklist status"""
+    # Assuming this uses some kind of bulk insert
+    # You'll need to adapt this to match your actual insert_nodes implementation
+
+    for chunk in chunks(nodes, 1000):  # Process in chunks if you have many nodes
+        values = []
+        for node in chunk:
+            # Convert node to dict or tuple based on your insert method
+            node_data = node.model_dump(mode="json")
+
+            # Add is_blacklisted value from our lookup
+            is_blacklisted = blacklisted_nodes.get((node.hotkey, node.netuid), False)
+
+            # Add to values list (format depends on your implementation)
+            values.append({**node_data, "is_blacklisted": is_blacklisted})
+
+        # Perform the insert with the preserved blacklist status
+        # This example uses a format compatible with asyncpg
+        columns = list(values[0].keys())
+        column_str = ", ".join(columns)
+        placeholder_str = ", ".join(f"${i+1}" for i in range(len(columns)))
+
+        query = f"""
+        INSERT INTO nodes ({column_str})
+        VALUES ({placeholder_str})
+        ON CONFLICT (hotkey, netuid) DO UPDATE SET
+        {', '.join(f"{col} = EXCLUDED.{col}" for col in columns if col not in ['hotkey', 'netuid'])}
+        """
+
+        for value_dict in values:
+            value_tuple = tuple(value_dict[col] for col in columns)
+            await connection.execute(query, *value_tuple)

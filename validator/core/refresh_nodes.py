@@ -12,7 +12,7 @@ from fiber.chain.models import Node
 
 from validator.core.config import Config
 from validator.db import constants as cst
-from validator.db.sql.nodes import get_all_nodes
+from validator.db.sql.nodes import get_all_nodes, insert_nodes_with_blacklist
 from validator.db.sql.nodes import get_last_updated_time_for_nodes
 from validator.db.sql.nodes import insert_nodes
 from validator.db.sql.nodes import migrate_nodes_to_history
@@ -37,28 +37,38 @@ async def _is_recent_update(config: Config) -> bool:
             return True
         return False
 
-
-async def _get_and_store_nodes(config: Config) -> list[Node]:
+async def get_and_store_nodes(config: Config) -> list[Node]:
     try:
         async with config.psql_db.pool.acquire(timeout=cst.TIMEOUT) as conn:
             await conn.execute("SELECT 1")
     except Exception as e:
         logger.warning(f"DB pool not ready, reconnecting... {e}")
-    if await _is_recent_update(config):
+
+    # Get blacklist status for existing nodes
+    blacklisted_nodes = {}
+    async with await config.psql_db.connection() as connection:
+        # Query just the hotkey, netuid, and is_blacklisted fields
+        query = "SELECT hotkey, netuid, is_blacklisted FROM nodes WHERE is_blacklisted = true"
+        rows = await connection.fetch(query)
+        for row in rows:
+            blacklisted_nodes[(row['hotkey'], row['netuid'])] = True
+
+    if await is_recent_update(config):
         nodes = await get_all_nodes(config.psql_db)
 
     logger.info("At fetch")
-    raw_nodes = await _fetch_nodes_from_substrate(config)
-    logger.info("afer  fetch")
+    raw_nodes = await fetch_nodes_from_substrate(config)
+    logger.info("after fetch")
     nodes = [Node(**node.model_dump(mode="json")) for node in raw_nodes]
-    logger.info("afer  nodes")
+    logger.info("after nodes")
 
     async with await config.psql_db.connection() as connection:
         logger.info("connection made")
         await migrate_nodes_to_history(connection)
         logger.info("after migrate")
-        await insert_nodes(connection, nodes)
-        logger.info("after insret")
+
+        await insert_nodes_with_blacklist(connection, nodes, blacklisted_nodes)
+        logger.info("after insert")
 
     logger.info(f"Stored {len(nodes)} nodes.")
     return nodes
