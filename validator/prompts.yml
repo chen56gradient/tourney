@@ -5,6 +5,8 @@ input_output_reformulation_sys: >
   1. Create a paraphrased version of each existing column while preserving the meaning
   2. Keep the style of the original text
   3. Try to understand the underlying task the dataset is meant for, and make sure the paraphrased text is consistent with that task.
+  
+  CRITICAL: You MUST return only valid JSON with the exact same schema as the input.
 
 
 input_output_reformulation_user: >
@@ -13,6 +15,10 @@ input_output_reformulation_user: >
 
   Create a paraphrased version by following the instructions above.
   Return your response in JSON format with the same schema as the input data.
+  
+  IMPORTANT: Your entire response must be valid, parseable JSON with double quotes (not single quotes) around keys and string values. 
+  
+  The valid JSON output should start with '{' and end with '}' with no additional text, markdown formatting, or explanations outside of the JSON object.
 input_reformulation_sys: >
   You are an expert in reformulating and paraphrasing inputs for LLM datasets while preserving their intent and meaning.
 
