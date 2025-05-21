@@ -158,29 +158,13 @@ async def _post_to_nineteen_ai(url: str, payload: dict[str, Any], keypair: Keypa
             "Content-Type": "application/json",
         }
 
-    try:
-        async with httpx.AsyncClient(timeout=120) as client:
-            response = await client.post(url=url, json=payload, headers=headers)
-            if response.status_code != 200:
-                logger.error(f"Error in nineteen ai response: {response.content}")
-                response.raise_for_status()
-            
-            # Only validate that we have a valid JSON structure, don't check content format
-            if url == PROMPT_GEN_ENDPOINT:
-                try:
-                    response_json = response.json()
-                    if not isinstance(response_json, dict):
-                        raise ValueError("Response is not a valid JSON object")
-                except Exception as e:
-                    logger.error(f"Nineteen AI returned an invalid JSON response: {e}")
-                    raise httpx.HTTPStatusError("Invalid response format", request=response.request, response=response)
-            
-            return response
-    except (httpx.HTTPStatusError, httpx.RequestError) as e:
-        raise e
-    except Exception as e:
-        logger.error(f"Unexpected error in API call to {url}: {str(e)}")
-        raise httpx.RequestError(f"Error calling {url}: {str(e)}", request=None)
+    async with httpx.AsyncClient(timeout=120) as client:
+        response = await client.post(url=url, json=payload, headers=headers)
+        if response.status_code != 200:
+            logger.error(f"Error in nineteen ai response: {response.content}")
+            response.raise_for_status()
+        
+        return response
 
 
 # If this it to talk to the miner, its already in fiber

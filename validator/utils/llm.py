@@ -25,13 +25,39 @@ def convert_to_nineteen_payload(
 
 
 def remove_reasoning_part(content: str, end_of_reasoning_tag: str) -> str:
-    if end_of_reasoning_tag and end_of_reasoning_tag in content:
-        content = content.split(end_of_reasoning_tag)[1].strip()
-        return content
-    else:
-        logger.warning(f"No end of reasoning tag found in content: {content}")
-        logger.warning("Returning empty string")
+    if not content:
         return ""
+        
+    # Check for explicit end of reasoning tag
+    if end_of_reasoning_tag and end_of_reasoning_tag in content:
+        parts = content.split(end_of_reasoning_tag)
+        if len(parts) > 1:
+            return parts[1].strip()
+            
+    # If not found, look for "<think>...</think>" pattern
+    think_start = "<think>"
+    think_end = "</think>"
+    
+    if think_start in content and think_end in content:
+        try:
+            parts = content.split(think_end, 1)
+            if len(parts) > 1:
+                return parts[1].strip()
+        except:
+            pass
+            
+    # If "</think>" not found but "<think>" exists, try to extract content after think block
+    if think_start in content and think_end not in content:
+        try:
+            think_content = content.split(think_start, 1)[1]
+            # Look for double newline which often separates thinking from response
+            if "\n\n" in think_content:
+                return think_content.split("\n\n", 1)[1].strip()
+        except:
+            pass
+    
+    # If we couldn't extract thinking, return original content as fallback
+    return content
 
 
 def extract_json_from_response(response: str) -> dict:
