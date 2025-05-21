@@ -99,12 +99,34 @@ async def process_non_stream_fiber(
 
 async def post_to_nineteen_chat(payload: dict[str, Any], keypair: Keypair) -> str | None:
     response = await _post_to_nineteen_ai(PROMPT_GEN_ENDPOINT, payload, keypair)
-    response_json = response.json()
     try:
-        return response_json["choices"][0]["message"]["content"]
-    except (KeyError, IndexError) as e:
-        logger.error(f"Error in nineteen ai chat response: {response_json}")
-        logger.exception(e)
+        response_json = response.json()
+        if not isinstance(response_json, dict):
+            logger.error(f"Response JSON is not a dictionary: {response_json}")
+            return None
+            
+        if not response_json.get("choices"):
+            logger.error(f"No 'choices' in response: {response_json}")
+            return None
+            
+        if not isinstance(response_json["choices"], list) or len(response_json["choices"]) == 0:
+            logger.error(f"'choices' is empty or not a list: {response_json['choices']}")
+            return None
+            
+        choice = response_json["choices"][0]
+        if not isinstance(choice, dict) or not choice.get("message"):
+            logger.error(f"First choice has no 'message': {choice}")
+            return None
+            
+        message = choice["message"]
+        if not isinstance(message, dict) or not message.get("content"):
+            logger.error(f"Message has no 'content': {message}")
+            return None
+            
+        return message["content"]
+    except Exception as e:
+        logger.error(f"Error in nineteen ai chat response: {response}")
+        logger.error(f"Exception: {e}")
         return None
 
 
