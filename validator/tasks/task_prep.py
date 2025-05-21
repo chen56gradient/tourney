@@ -626,9 +626,12 @@ async def prepare_text_task(task: AnyTextTypeRawTask, keypair: Keypair) -> tuple
         else:
             logger.info("Skipping synthetic data generation")
     except Exception as e:
-        logger.info(f"Synthetic dataset gen is down, moving part of the train over: {e}")
+        logger.warning(f"Synthetic data generation failed: {type(e).__name__}: {e}")
+        logger.info("Falling back to splitting training data for synthetic dataset")
         is_dpo = isinstance(task, DpoRawTask)
-        train_ds, synthetic_ds = assign_some_of_the_train_to_synth(train_ds, is_dpo=is_dpo)
+        is_instruct = isinstance(task, InstructTextRawTask)
+        # Both DPO and Instruct now use the same approach for train/synth splitting
+        train_ds, synthetic_ds = assign_some_of_the_train_to_synth(train_ds, is_dpo=(is_dpo or is_instruct))
 
     if synthetic_ds is None:
         logger.info("There was not enough synthetic data created, using train samples instead")

@@ -192,7 +192,8 @@ async def generate_augmented_text_dataset(
                     batch_error_count += 1
                     
                     if consecutive_errors >= max_consecutive_errors:
-                        logger.error(f"Maximum consecutive errors reached when generating the augmented dataset. Here is one result {result}")
+                        logger.error(f"Maximum consecutive errors reached when generating synthetic data - API service is likely unavailable. Error: {type(result).__name__}: {result}")
+                        logger.warning(f"Falling back to dataset splitting instead of generation after {consecutive_errors} failed API calls")
                         return None
                 elif result is None:
                     batch_error_count += 1
