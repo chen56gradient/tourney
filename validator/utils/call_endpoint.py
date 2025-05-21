@@ -100,33 +100,46 @@ async def process_non_stream_fiber(
 async def post_to_nineteen_chat(payload: dict[str, Any], keypair: Keypair) -> str | None:
     response = await _post_to_nineteen_ai(PROMPT_GEN_ENDPOINT, payload, keypair)
     try:
-        response_json = response.json()
+        response_data = response.json()
+        
+        # Handle nested JSON structure
+        if isinstance(response_data, dict) and "content" in response_data and isinstance(response_data["content"], str):
+            try:
+                import json
+                response_json = json.loads(response_data["content"])
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse nested JSON content: {response_data['content']}")
+                return None
+        else:
+            response_json = response_data
+            
+        # Now process the actual API response
         if not isinstance(response_json, dict):
             logger.error(f"Response JSON is not a dictionary: {response_json}")
             return None
             
-        if not response_json.get("choices"):
+        if "choices" not in response_json:
             logger.error(f"No 'choices' in response: {response_json}")
             return None
             
-        if not isinstance(response_json["choices"], list) or len(response_json["choices"]) == 0:
-            logger.error(f"'choices' is empty or not a list: {response_json['choices']}")
+        choices = response_json["choices"]
+        if not isinstance(choices, list) or not choices:
+            logger.error(f"'choices' is empty or not a list: {choices}")
             return None
             
-        choice = response_json["choices"][0]
-        if not isinstance(choice, dict) or not choice.get("message"):
+        choice = choices[0]
+        if not isinstance(choice, dict) or "message" not in choice:
             logger.error(f"First choice has no 'message': {choice}")
             return None
             
         message = choice["message"]
-        if not isinstance(message, dict) or not message.get("content"):
+        if not isinstance(message, dict) or "content" not in message:
             logger.error(f"Message has no 'content': {message}")
             return None
             
         return message["content"]
     except Exception as e:
-        logger.error(f"Error in nineteen ai chat response: {response}")
-        logger.error(f"Exception: {e}")
+        logger.error(f"Error in nineteen ai chat response: {e}")
         return None
 
 
