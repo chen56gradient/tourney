@@ -171,11 +171,13 @@ def adapt_synthetic_columns(
 async def get_additional_synth_data(
     dataset: Dataset, columns_to_sample: list[str], keypair: Keypair, task: AnyTextTypeRawTask
 ) -> list[dict]:
+    dataset_size = len(dataset)
     num_samples = min(
         cst.SYNTHETIC_TOTAL_SIZE * 2,
-        int(len(dataset) * cst.ADDITIONAL_SYNTH_DATA_PERCENTAGE * 2),
+        int(dataset_size * cst.ADDITIONAL_SYNTH_DATA_PERCENTAGE * 2),
+        dataset_size  # Make sure we don't try to select more than available
     )
-    logger.info(f"Attempting to generate {cst.SYNTHETIC_TOTAL_SIZE} synthetic data points")
+    logger.info(f"Attempting to generate {cst.SYNTHETIC_TOTAL_SIZE} synthetic data points from {num_samples} source samples")
     sampled_data = dataset.shuffle(seed=42).select(range(num_samples))
 
     sampled_data = sampled_data.remove_columns([col for col in sampled_data.column_names if col not in columns_to_sample])
@@ -229,6 +231,7 @@ async def get_additional_synth_data(
     
     if len(synthetic_dataset) < cst.SYNTHETIC_TOTAL_SIZE:
         missing_samples = cst.SYNTHETIC_TOTAL_SIZE - len(synthetic_dataset)
+        missing_samples = min(missing_samples, dataset_size)  # Ensure we don't try to select more than available
         logger.warning(
             f"Could only generate {len(synthetic_dataset)}/{cst.SYNTHETIC_TOTAL_SIZE} "
             f"synthetic samples. Adding {missing_samples} samples from training data."
@@ -431,7 +434,8 @@ async def generate_synthetic_dpo_data(dataset: Dataset, keypair: Keypair, task: 
     prompt_field = task.field_prompt
     logger.info(f"Generating synthetic DPO data from the field {prompt_field}")
     
-    num_samples = min(cst.SYNTHETIC_TOTAL_SIZE * 2, len(dataset))
+    dataset_size = len(dataset)
+    num_samples = min(cst.SYNTHETIC_TOTAL_SIZE * 2, dataset_size)
     
     sampled_data = dataset.shuffle(seed=42).select(range(num_samples))
     prompts = sampled_data[prompt_field]
@@ -439,7 +443,7 @@ async def generate_synthetic_dpo_data(dataset: Dataset, keypair: Keypair, task: 
     prompts_for_gen = [{prompt_field: prompt} for prompt in prompts]
     
     prompts_obj = load_prompts()
-    logger.info(f"Attempting to generate {cst.SYNTHETIC_TOTAL_SIZE} synthetic DPO samples")
+    logger.info(f"Attempting to generate {cst.SYNTHETIC_TOTAL_SIZE} synthetic DPO samples from {num_samples} source samples")
     
     synthetic_dataset = []
     json_errors = 0
@@ -526,6 +530,7 @@ async def generate_synthetic_dpo_data(dataset: Dataset, keypair: Keypair, task: 
     
     if len(synthetic_dataset) < cst.SYNTHETIC_TOTAL_SIZE:
         missing_samples = cst.SYNTHETIC_TOTAL_SIZE - len(synthetic_dataset)
+        missing_samples = min(missing_samples, dataset_size)  # Ensure we don't try to select more than available
         logger.warning(
             f"Could only generate {len(synthetic_dataset)}/{cst.SYNTHETIC_TOTAL_SIZE} "
             f"synthetic samples. Adding {missing_samples} samples from training data."
