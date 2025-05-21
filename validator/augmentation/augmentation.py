@@ -128,17 +128,24 @@ async def generate_dpo_reformulation(prompt: str, prompts: Prompts, keypair: Key
 
 async def process_row(row, prompts, keypair, task_type: TaskType) -> dict | DpoDatasetColumnsResponse:
     if task_type in [TaskType.INSTRUCTTEXTTASK, TaskType.GRPOTASK]:
-        json_synthetic_data_point = await generate_paraphrased_version(row, prompts, keypair)
-
-        if check_the_synthetic_data(json_synthetic_data_point, row.keys()):
-            return json_synthetic_data_point
-        else:
-            error_message = (
-                f"Generated data point has incorrect schema. Expected keys: {set(row.keys())}, "
-                f"got: {set(json_synthetic_data_point.keys())}"
-            )
-            logger.error(error_message)
-            raise ValueError(error_message)
+        try:
+            json_synthetic_data_point = await generate_paraphrased_version(row, prompts, keypair)
+            
+            if not json_synthetic_data_point:
+                return None
+                
+            if check_the_synthetic_data(json_synthetic_data_point, row.keys()):
+                return json_synthetic_data_point
+            else:
+                error_message = (
+                    f"Generated data point has incorrect schema. Expected keys: {set(row.keys())}, "
+                    f"got: {set(json_synthetic_data_point.keys()) if json_synthetic_data_point else 'None'}"
+                )
+                logger.error(error_message)
+                raise ValueError(error_message)
+        except Exception as e:
+            logger.error(f"Error processing row: {e}")
+            return None
     elif task_type == TaskType.DPOTASK:
         return await generate_dpo_reformulation(row, prompts, keypair)
 
@@ -155,45 +162,58 @@ async def generate_augmented_text_dataset(
     generic_errors = 0
     consecutive_errors = 0
     max_consecutive_errors = 10
+    batch_retry_attempts = 2
 
     total_batches = (len(sampled_data) + SYNTH_GEN_BATCH_SIZE - 1) // SYNTH_GEN_BATCH_SIZE
     for batch_idx in range(0, len(sampled_data), SYNTH_GEN_BATCH_SIZE):
         batch = sampled_data[batch_idx : batch_idx + SYNTH_GEN_BATCH_SIZE]
         current_batch = (batch_idx // SYNTH_GEN_BATCH_SIZE) + 1
-        logger.info(f"Processing batch {current_batch}/{total_batches} ({len(batch)} samples)")
-
-        tasks = [process_row(row, prompts, keypair, task_type) for row in batch]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        batch_results = []
-        for idx, result in enumerate(results):
-            if isinstance(result, Exception):
-                if isinstance(result, json.JSONDecodeError):
-                    json_errors += 1
+        
+        batch_success = False
+        for retry in range(batch_retry_attempts):
+            if retry > 0:
+                logger.info(f"Retrying batch {current_batch}/{total_batches} (attempt {retry+1}/{batch_retry_attempts})")
+            
+            logger.info(f"Processing batch {current_batch}/{total_batches} ({len(batch)} samples)")
+            
+            tasks = [process_row(row, prompts, keypair, task_type) for row in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            batch_results = []
+            batch_error_count = 0
+            
+            for idx, result in enumerate(results):
+                if isinstance(result, Exception):
+                    if isinstance(result, json.JSONDecodeError):
+                        json_errors += 1
+                    else:
+                        generic_errors += 1
+                    consecutive_errors += 1
+                    batch_error_count += 1
+                    
+                    if consecutive_errors >= max_consecutive_errors:
+                        logger.error(f"Maximum consecutive errors reached when generating the augmented dataset. Here is one result {result}")
+                        return None
+                elif result is None:
+                    batch_error_count += 1
                 else:
-                    generic_errors += 1
-                consecutive_errors += 1
-                if consecutive_errors >= max_consecutive_errors:
-                    logger.error(f"Maximum consecutive errors reached when generating the augmented dataset. Here is one result {result}")
-                    return None
-            else:
-                if batch_idx == 0 and idx<5:
-                    logger.info(f"Sample input: {batch[idx]}")
-                    logger.info(f"Sample output: {result}")
-                consecutive_errors = 0  # Reset on success
-                batch_results.append(result)
-
-        synthetic_dataset.extend(batch_results)
-
-        if batch_results:
-            logger.info(
-                f"Batch {current_batch}/{total_batches} complete. "
-                f"Generated {len(batch_results)}/{len(batch)} samples successfully"
-            )
-
-    logger.info(
-        f"Finished processing all batches. Generated {len(synthetic_dataset)} samples total. "
-        f"JSON errors: {json_errors}, Other errors: {generic_errors}"
-    )
-
+                    if batch_idx == 0 and idx < 5:
+                        logger.info(f"Sample input: {batch[idx]}")
+                        logger.info(f"Sample output: {result}")
+                    consecutive_errors = 0
+                    batch_results.append(result)
+            
+            synthetic_dataset.extend(batch_results)
+            
+            if batch_results:
+                logger.info(f"Batch {current_batch}/{total_batches} complete. Generated {len(batch_results)}/{len(batch)} samples successfully")
+                if len(batch_results) >= len(batch) * 0.3 or batch_error_count < 3:
+                    batch_success = True
+                    break
+                    
+        if not batch_success:
+            logger.warning(f"Batch {current_batch} failed to generate any valid synthetic data")
+            
+    logger.info(f"Finished processing all batches. Generated {len(synthetic_dataset)} samples total. JSON errors: {json_errors}, Other errors: {generic_errors}")
+    
     return synthetic_dataset
