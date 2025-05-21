@@ -130,10 +130,14 @@ async def _post_to_nineteen_ai(url: str, payload: dict[str, Any], keypair: Keypa
                 logger.error(f"Error in nineteen ai response: {response.content}")
                 response.raise_for_status()
             
+            # Only validate that we have a valid JSON structure, don't check content format
             if url == PROMPT_GEN_ENDPOINT:
-                response_json = response.json()
-                if not response_json.get("choices") or not response_json["choices"]:
-                    logger.error(f"Nineteen AI returned an empty or invalid response: {response_json}")
+                try:
+                    response_json = response.json()
+                    if not isinstance(response_json, dict):
+                        raise ValueError("Response is not a valid JSON object")
+                except Exception as e:
+                    logger.error(f"Nineteen AI returned an invalid JSON response: {e}")
                     raise httpx.HTTPStatusError("Invalid response format", request=response.request, response=response)
             
             return response
