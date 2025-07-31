@@ -23,7 +23,7 @@ Where `task_type` can be:
 
 ## Docker-Based Architecture
 
-### Supported Base Images
+### Recommended Base Images
 
 **For Text Tasks (Instruct, DPO, GRPO, Chat):**
 ```dockerfile
@@ -150,14 +150,14 @@ model_path = f"/cache/models/{model.replace('/', '--')}"
 
 ### Image Dataset Path
 ```python
-# Models are pre-downloaded to this location by the downloader container
-model_path = f"/cache/datasets/{task_id}.zip"
+# Image datasets are pre-downloaded to this location by the downloader container
+dataset_path = f"/cache/datasets/{task_id}_tourn.zip"
 ```
 
 ### Text Dataset Path
 ```python
-# Models are pre-downloaded to this location by the downloader container
-model_path = f"/cache/datasets/{task_id}_train_data.json"
+# Text datasets are pre-downloaded to this location by the downloader container
+dataset_path = f"/cache/datasets/{task_id}_train_data.json"
 ```
 
 ## Example Entrypoint Script
